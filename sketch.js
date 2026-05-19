@@ -29,6 +29,11 @@ let videoError = false;
 // 新增：防重複觸發變數，確保玩家在回合間有放開手
 let canTriggerNext = true;
 
+// 新增：暫停相關變數
+let pauseStartTime;
+let prevState; // 用於紀錄暫停前的狀態
+let pauseSnapshot; // 用於儲存毛玻璃效果的快照
+
 function preload() {
   handPose = ml5.handPose({ flipped: true });
   backgroundImg = loadImage('圖片/背景.png');
@@ -130,6 +135,8 @@ function draw() {
   } else if (gameState === "instructions") {
     instructionPage();
     if (videoReady) checkHandTrigger(); // 鏡頭好了才開放手勢自動開始
+  } else if (gameState === "paused") {
+    pausePage();
   } else {
     // 進入「倒數」或「結果」狀態，必須要有鏡頭
     if (!videoReady) {
@@ -230,7 +237,59 @@ function drawTopBar() {
 
   fill(255);
   textSize(getSize(22, 18, 28));
-  text("你：" + playerScore + "   電腦：" + computerScore, width / 2, 30);
+  text("你：" + playerScore + "   電腦：" + computerScore, width / 2 - 40, 30);
+
+  // 繪製右上角暫停按鈕
+  drawPauseButton(width - 40, 30);
+}
+
+// 新增：檢查圓形範圍的輔助函式
+function isMouseOverCircle(x, y, r) {
+  return dist(mouseX, mouseY, x, y) < r;
+}
+
+function drawPauseButton(x, y) {
+  push();
+  fill(255);
+  if (isMouseOverCircle(x, y, 20)) fill(255, 255, 0);
+  circle(x, y, 40);
+  
+  fill(0);
+  if (gameState === "paused") {
+    // 播放符號
+    triangle(x - 5, y - 8, x - 5, y + 8, x + 8, y);
+  } else {
+    // 暫停符號
+    rectMode(CENTER);
+    rect(x - 5, y, 4, 16);
+    rect(x + 5, y, 4, 16);
+  }
+  pop();
+}
+
+function pausePage() {
+  // 如果有快照，則繪製快照作為背景
+  if (pauseSnapshot) {
+    image(pauseSnapshot, 0, 0);
+  }
+  
+  // 半透明深色遮罩，讓文字更易讀 (Alpha 值稍微調低讓模糊效果透出來)
+  fill(0, 120);
+  rect(width / 2, height / 2, width, height);
+  
+  // 打字機動畫效果：根據經過的時間計算當前應顯示的字數
+  let fullText = "遊戲暫停";
+  let charCount = floor((millis() - pauseStartTime) / 200); // 每 200 毫秒顯示一個新字元
+  let displayText = fullText.substring(0, charCount);
+
+  fill(255);
+  textSize(getSize(50, 40, 60));
+  text(displayText, width / 2, height * 0.4);
+  
+  // 繪製暫停頁面的按鈕
+  // 使用固定的座標，方便在 mousePressed 中判定
+  drawButton(width / 2, height * 0.55, "繼續遊戲");
+  drawButton(width / 2, height * 0.70, "回到主選單");
 }
 
 function coverPage() {
@@ -571,23 +630,78 @@ function checkHandTrigger() {
 }
 
 function mousePressed() {
+  // 1. 檢查是否點擊右上角暫停按鈕 (僅在遊戲進行中可用)
+  if (gameState !== "cover" && gameState !== "instructions") {
+    if (isMouseOverCircle(width - 40, 30, 20)) {
+      togglePause();
+      return; // 觸發暫停後直接結束，避免誤觸下方按鈕
+    }
+  }
+
   // 如果鏡頭出錯，點擊按鈕後重新整理網頁
   if (videoError && isMouseOverButton(width / 2, height * 0.82)) {
     window.location.reload();
   }
 
-  // 封面頁面 -> 進入說明頁面
-  if (gameState === "cover" && isMouseOverButton(width / 2, height * 0.7)) {
+  // 2. 根據狀態判定不同按鈕
+  if (gameState === "paused") {
+    // 繼續遊戲按鈕
+    if (isMouseOverButton(width / 2, height * 0.55)) {
+      togglePause();
+    }
+    // 回到主選單按鈕
+    else if (isMouseOverButton(width / 2, height * 0.70)) {
+      gameState = "cover";
+      playerScore = 0;
+      computerScore = 0;
+    }
+  } 
+  else if (gameState === "cover" && isMouseOverButton(width / 2, height * 0.7)) {
+    // 封面頁面 -> 進入說明頁面
     gameState = "instructions";
   } 
-  // 說明頁面 -> 開始倒數
   else if (gameState === "instructions" && isMouseOverButton(width / 2, height * 0.8)) {
+    // 說明頁面 -> 開始倒數
     gameState = "countdown";
     countdownStart = millis();
   } 
   else if (gameState === "result" && isMouseOverButton(width / 2, height * 0.88)) {
+    // 結果頁面 -> 再玩一次
     gameState = "countdown";
     countdownStart = millis();
+  }
+}
+
+function togglePause() {
+  if (gameState !== "paused") {
+    prevState = gameState; // 紀錄當前狀態 (是倒數中還是結果中)
+    pauseStartTime = millis();
+    
+    // 捕捉當前畫面並製作毛玻璃效果 (一次性處理，確保效能)
+    pauseSnapshot = get();
+    pauseSnapshot.filter(BLUR, 8); // 8 為模糊強度
+    
+    gameState = "paused";
+  } else {
+    // 計算暫停了多久
+    let pausedDuration = millis() - pauseStartTime;
+    
+    // 補償計時器，防止倒數時間跳走
+    if (countdownStart) countdownStart += pausedDuration;
+    if (playTimeStart) playTimeStart += pausedDuration;
+    
+    // 回到暫停前的狀態
+    gameState = prevState || "countdown";
+  }
+}
+
+function keyPressed() {
+  // 檢查是否按下 ESC 鍵 (p5.js 內建常數為 ESCAPE)
+  if (keyCode === ESCAPE) {
+    // 只有在遊戲進行中或已經暫停時才觸發切換
+    if (gameState === "paused" || (gameState !== "cover" && gameState !== "instructions")) {
+      togglePause();
+    }
   }
 }
 
