@@ -41,18 +41,33 @@ function setup() {
     videoReady = true;
     handPose.detectStart(video, gotHands);
   });
-  video.size(640, 480);
+  
+  // 動態調整視頻尺寸，適配手機和電腦
+  let videoWidth = min(640, windowWidth);
+  let videoHeight = min(480, windowHeight);
+  video.size(videoWidth, videoHeight);
   video.hide();
 
-  // 設定逾時檢查：如果 8 秒後鏡頭還沒準備好，則判定為錯誤
+  // 設定逾時檢查：如果 10 秒後鏡頭還沒準備好，則判定為錯誤
   setTimeout(() => {
     if (!videoReady) {
       videoError = true;
+      console.error("攝像頭啟動超時或失敗");
     }
-  }, 8000);
+  }, 10000);
 
   textAlign(CENTER, CENTER);
   rectMode(CENTER);
+  
+  // 監聽方向變化（手機專用）
+  window.addEventListener('orientationchange', handleOrientationChange);
+}
+
+function handleOrientationChange() {
+  // 延遲以等待系統完成方向變化
+  setTimeout(() => {
+    resizeCanvas(windowWidth, windowHeight);
+  }, 100);
 }
 
 function gotHands(results) {
@@ -404,4 +419,11 @@ function touchStarted() {
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  
+  // 當窗口大小改變時，重新調整視頻尺寸
+  if (video && videoReady) {
+    let videoWidth = min(640, windowWidth);
+    let videoHeight = min(480, windowHeight);
+    video.size(videoWidth, videoHeight);
+  }
 }
