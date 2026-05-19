@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>手勢測試</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: black;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    let video;
+    let handPose;
+    let hands = [];
+
+    function preload() {
+      handPose = ml5.handPose({ flipped: true });
+    }
+
+    function gotHands(results) {
+      hands = results;
+      // 調試：每幀打印偵測到的手的數量
+      if (hands.length > 0) {
+        console.log("偵測到手:", hands.length, "個，信心值:", hands[0].confidence.toFixed(2));
+      }
+    }
+
+    function setup() {
+      createCanvas(windowWidth, windowHeight);
+      video = createCapture(VIDEO, () => {
+        console.log("鏡頭已啟動，開始偵測");
+        handPose.detectStart(video, gotHands);
+      });
+      video.size(640, 480);
+      video.hide();
+    }
+
+    function draw() {
+      background(20);
+      
+      // 顯示視頻（縮放以填滿畫布）
+      let videoRatio = video.width / video.height;
+      let canvasRatio = width / height;
+      
+      let drawW, drawH;
+      if (canvasRatio > videoRatio) {
+        drawW = width;
+        drawH = width / videoRatio;
+      } else {
+        drawH = height;
+        drawW = height * videoRatio;
+      }
+      
+      let vX = (width - drawW) / 2;
+      let vY = (height - drawH) / 2;
+      
+      image(video, vX, vY, drawW, drawH);
+      
+      // 繪製手勢 - 直接使用視頻座標（不縮放）
+      // 這是為了測試是否是縮放問題
+      if (hands.length > 0) {
+        for (let hand of hands) {
+          if (hand.confidence > 0.1) {
+            if (hand.handedness == "Left") {
+              fill(255, 0, 255);
+            } else {
+              fill(255, 255, 0);
+            }
+            noStroke();
+            
+            for (let keypoint of hand.keypoints) {
+              // 方法1：直接繪製（應該會看到不對的位置，但至少能看到）
+              // circle(keypoint.x, keypoint.y, 10);
+              
+              // 方法2：使用縮放坐標
+              let scaleX = drawW / video.width;
+              let scaleY = drawH / video.height;
+              circle(vX + keypoint.x * scaleX, vY + keypoint.y * scaleY, 10);
+            }
+          }
+        }
+      }
+      
+      // UI 提示
+      fill(255);
+      textSize(16);
+      text("手偵測狀態: " + hands.length + " 隻手", 20, 30);
+      if (hands.length > 0) {
+        text("信心值: " + hands[0].confidence.toFixed(2), 20, 50);
+      }
+    }
+
+    function windowResized() {
+      resizeCanvas(windowWidth, windowHeight);
+    }
+  </script>
+</body>
+</html>
