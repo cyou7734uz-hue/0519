@@ -24,6 +24,8 @@ let vW, vH, vX, vY;
 let videoReady = false;
 // 新增：追蹤鏡頭是否啟動失敗
 let videoError = false;
+// 新增：防重複觸發變數，確保玩家在回合間有放開手
+let canTriggerNext = true;
 
 function preload() {
   handPose = ml5.handPose({ flipped: true });
@@ -32,8 +34,9 @@ function preload() {
 function setup() {
   createCanvas(windowWidth, windowHeight);
 
-  // 加入回調函式，確保鏡頭就緒後才開始偵測
-  video = createCapture(VIDEO, { flipped: true }, () => {
+  // 修正：移除不標準的 { flipped: true } 參數
+  // p5.js createCapture 第二個參數應直接放 callback
+  video = createCapture(VIDEO, () => {
     console.log("鏡頭已啟動");
     videoReady = true;
     handPose.detectStart(video, gotHands);
@@ -155,7 +158,7 @@ function startPage() {
   text("剪刀石頭布", width / 2, height * 0.36);
 
   textSize(getSize(24, 18, 30));
-  text("點按畫面開始", width / 2, height * 0.46);
+  text("比出手勢或點按開始", width / 2, height * 0.46);
 
   drawButton(width / 2, height * 0.65, "開始");
 }
@@ -345,23 +348,34 @@ function isMouseOverButton(x, y) {
   );
 }
 
-// 新增：檢查是否有「讚」手勢來觸發開始
 function checkHandTrigger() {
-  let activeHand = hands.find(h => h.confidence > 0.1);
-  if (activeHand) {
-    let detectedGesture = detectMove(activeHand);
-    // 如果在出拳階段，且「出拳！」已顯示，且尚未做出動作，且偵測到有效的遊戲手勢
-    if (gameState === "countdown" && countdown <= 0 && !moveMade && (detectedGesture === "剪刀" || detectedGesture === "石頭" || detectedGesture === "布")) {
-      playerMove = detectedGesture; // 儲存偵測到的玩家動作
-      moveMade = true; // 標記為已做出動作
-      executeGameRound(); // 執行遊戲回合邏輯
-      gameState = "result"; // 轉換到結果頁面
-    }
-    // 原始的「讚」手勢觸發開始/再玩一次的邏輯
-    else if ((gameState === "start" || gameState === "result") && detectedGesture === "讚") {
-      gameState = "countdown";
-      countdownStart = millis();
-    }
+  // 提高信心值要求，確保手勢辨識準確，避免背景干擾自動開始
+  let activeHand = hands.find(h => h.confidence > 0.4);
+  
+  // 如果畫面上沒偵測到手，重置觸發許可 (這讓玩家可以透過「移開手再放回」來再次自動開始遊戲)
+  if (!activeHand) {
+    canTriggerNext = true;
+    return;
+  }
+
+  let detectedGesture = detectMove(activeHand);
+
+  // 情境一：在「出拳！」階段，偵測到有效手勢立刻進行結算
+  if (gameState === "countdown" && countdown <= 0 && !moveMade && 
+      (detectedGesture === "剪刀" || detectedGesture === "石頭" || detectedGesture === "布")) {
+    playerMove = detectedGesture;
+    moveMade = true;
+    executeGameRound();
+    gameState = "result";
+    canTriggerNext = false; // 鎖定觸發，防止立刻重新開始下一局
+  }
+  
+  // 情境二：在「等待開始」或「結算結果」畫面，偵測到任何手勢就自動開始
+  if (canTriggerNext && (gameState === "start" || gameState === "result") && 
+           (detectedGesture !== "不明" && detectedGesture !== "等待中")) {
+    gameState = "countdown";
+    countdownStart = millis();
+    canTriggerNext = false; // 標記已觸發，避免在倒數時重複重置時間
   }
 }
 
