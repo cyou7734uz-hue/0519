@@ -85,6 +85,16 @@ function draw() {
 
   drawVideoFit();
   drawHand();
+  
+  // 調試信息：顯示手的偵測狀態
+  fill(255);
+  textSize(14);
+  textAlign(LEFT, TOP);
+  text("偵測到的手: " + hands.length + " 隻", 10, 10);
+  if (hands.length > 0) {
+    text("信心值: " + hands[0].confidence.toFixed(2), 10, 30);
+  }
+  textAlign(CENTER, CENTER);
 
   drawTopBar();
 
