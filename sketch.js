@@ -13,6 +13,10 @@ let computerScore = 0;
 let countdown = 3;
 let countdownStart;
 
+// 新增：出拳階段的計時器變數
+let playTimeStart;
+const playDuration = 3; // 玩家必須在 3 秒內完成動作
+let moveMade = false; // 追蹤玩家是否已做出動作
 // 用於計算影像縮放與偏移的變數，確保手部點位繪製能對齊畫面
 let vW, vH, vX, vY;
 
@@ -55,7 +59,7 @@ function gotHands(results) {
 function draw() {
   background(20);
 
-  // 如果鏡頭還沒準備好，顯示讀取畫面並中斷後續繪製
+  // 如果鏡頭還沒準備好，顯示讀取畫面並中斷後���繪製
   if (!videoReady || video.width === 0) {
     loadingPage();
     return;
@@ -68,10 +72,13 @@ function draw() {
 
   if (gameState === "start") {
     startPage();
+    checkHandTrigger(); // 在開始頁面偵測手勢觸發
   } else if (gameState === "countdown") {
     countdownPage();
+    checkHandTrigger(); // 在倒數階段也要偵測手勢（出拳）
   } else if (gameState === "result") {
     resultPage();
+    checkHandTrigger(); // 在結果頁面偵測手勢觸發
   }
 }
 
@@ -153,28 +160,6 @@ function startPage() {
   drawButton(width / 2, height * 0.65, "開始");
 }
 
-function countdownPage() {
-  let elapsed = floor((millis() - countdownStart) / 1000);
-  countdown = 3 - elapsed;
-
-  fill(0, 180);
-  rect(width / 2, height / 2, width, height);
-
-  fill(255);
-  textSize(getSize(100, 70, 130));
-
-  if (countdown > 0) {
-    text(countdown, width / 2, height / 2);
-  } else {
-    text("出拳！", width / 2, height / 2);
-
-    if (elapsed >= 4) {
-      playGame();
-      gameState = "result";
-    }
-  }
-}
-
 function resultPage() {
   fill(0, 180);
   rect(width / 2, height - 110, width, 220);
@@ -188,19 +173,54 @@ function resultPage() {
   text(resultText, width / 2, height - 65);
 
   showAnimation();
-  drawButton(width / 2, height * 0.82, "再玩一次");
+  drawButton(width / 2, height * 0.82, "再玩一次"); // 確保按鈕在結果頁面顯示
 }
 
-function playGame() {
-  // 尋找第一個信心值足夠的手（參考範例代碼）
-  let activeHand = hands.find(h => h.confidence > 0.1);
+// 保留這個版本的 countdownPage，並加入剩餘時間顯示
+function countdownPage() {
+  let elapsed = floor((millis() - countdownStart) / 1000);
+  countdown = 3 - elapsed;
 
-  if (activeHand) {
-    playerMove = detectMove(activeHand);
+  fill(0, 180);
+  rect(width / 2, height / 2, width, height);
+
+  fill(255);
+  textSize(getSize(100, 70, 130));
+
+  if (countdown > 0) {
+    text(countdown, width / 2, height / 2);
+    playTimeStart = undefined; // 重置計時器
+    moveMade = false; // 重置動作狀態
+    playerMove = "等待中"; // 重置玩家動作
   } else {
-    playerMove = "沒偵測到";
-  }
+    text("出拳！", width / 2, height / 2);
+    
+    if (playTimeStart === undefined) {
+      playTimeStart = millis(); // 當「出拳！」出現時啟動計時器
+    }
 
+    // 顯示 3 秒倒數計時（視覺提示）
+    let timerElapsed = (millis() - playTimeStart) / 1000;
+    let remaining = max(0, (playDuration - timerElapsed)).toFixed(1);
+    textSize(getSize(32, 24, 40));
+    fill(255, 255, 0);
+    text("剩餘時間: " + remaining + "s", width / 2, height / 2 + 80);
+
+    // 如果時間到且玩家尚未出拳
+    if (!moveMade && timerElapsed >= playDuration) {
+      moveMade = true; // 標記為已做出動作（因超時）
+      if (playerMove === "等待中") { // 如果玩家動作仍是預設值，表示超時未偵測到
+        playerMove = "沒偵測到";
+      }
+      executeGameRound(); // 執行遊戲回合邏輯
+      gameState = "result"; // 轉換到結果頁面
+    }
+  }
+}
+
+// 將原先的 playGame 函式更名為 executeGameRound
+function executeGameRound() {
+  // playerMove 已經由 checkHandTrigger 或 countdownPage 設定
   computerMove = random(["剪刀", "石頭", "布"]);
   resultText = judge(playerMove, computerMove);
 }
@@ -208,6 +228,8 @@ function playGame() {
 function detectMove(hand) {
   let kp = hand.keypoints;
 
+  // 偵測手指是否伸直 (y 座標越小代表位置越高)
+  let thumbUp = kp[4].y < kp[3].y && kp[4].y < kp[5].y;
   let indexUp = kp[8].y < kp[5].y;
   let middleUp = kp[12].y < kp[9].y;
   let ringUp = kp[16].y < kp[13].y;
@@ -218,6 +240,11 @@ function detectMove(hand) {
   if (middleUp) count++;
   if (ringUp) count++;
   if (pinkyUp) count++;
+
+  // 1. 優先判斷「讚」(只有大拇指朝上，其餘四指收起)
+  if (thumbUp && count === 0) {
+    return "讚";
+  }
 
   if (count >= 4) return "布";
 
@@ -231,7 +258,7 @@ function detectMove(hand) {
 }
 
 function judge(player, computer) {
-  if (player === "不明" || player === "沒偵測到") {
+  if (player === "不明" || player === "沒偵測到" || player === "讚") {
     return "沒看清楚";
   }
 
@@ -306,13 +333,51 @@ function getSize(base, minSize, maxSize) {
   return constrain(s, minSize, maxSize);
 }
 
+// 新增：檢查滑鼠是否在按鈕範圍內的輔助函式
+function isMouseOverButton(x, y) {
+  let btnW = constrain(width * 0.35, 180, 260);
+  let btnH = constrain(height * 0.09, 56, 76);
+  return (
+    mouseX > x - btnW / 2 &&
+    mouseX < x + btnW / 2 &&
+    mouseY > y - btnH / 2 &&
+    mouseY < y + btnH / 2
+  );
+}
+
+// 新增：檢查是否有「讚」手勢來觸發開始
+function checkHandTrigger() {
+  let activeHand = hands.find(h => h.confidence > 0.1);
+  if (activeHand) {
+    let detectedGesture = detectMove(activeHand);
+    // 如果在出拳階段，且「出拳！」已顯示，且尚未做出動作，且偵測到有效的遊戲手勢
+    if (gameState === "countdown" && countdown <= 0 && !moveMade && (detectedGesture === "剪刀" || detectedGesture === "石頭" || detectedGesture === "布")) {
+      playerMove = detectedGesture; // 儲存偵測到的玩家動作
+      moveMade = true; // 標記為已做出動作
+      executeGameRound(); // 執行遊戲回合邏輯
+      gameState = "result"; // 轉換到結果頁面
+    }
+    // 原始的「讚」手勢觸發開始/再玩一次的邏輯
+    else if ((gameState === "start" || gameState === "result") && detectedGesture === "讚") {
+      gameState = "countdown";
+      countdownStart = millis();
+    }
+  }
+}
+
 function mousePressed() {
   // 如果鏡頭出錯，點擊按鈕後重新整理網頁
-  if (videoError) {
+  if (videoError && isMouseOverButton(width / 2, height * 0.82)) {
     window.location.reload();
   }
 
-  if (gameState === "start" || gameState === "result") {
+  // 只有在 start 頁面點擊 "開始" 按鈕
+  if (gameState === "start" && isMouseOverButton(width / 2, height * 0.65)) {
+    gameState = "countdown";
+    countdownStart = millis();
+  } 
+  // 只有在 result 頁面點擊 "再玩一次" 按鈕
+  else if (gameState === "result" && isMouseOverButton(width / 2, height * 0.82)) {
     gameState = "countdown";
     countdownStart = millis();
   }
