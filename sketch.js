@@ -183,29 +183,31 @@ function startPage() {
   rect(width / 2, height / 2, width, height);
 
   fill(255);
-  textSize(getSize(52, 36, 64));
-  text("剪刀石頭布", width / 2, height * 0.36);
+  textSize(getSize(56, 40, 72));
+  text("剪刀石頭布", width / 2, height * 0.30);
 
-  textSize(getSize(24, 18, 30));
-  text("比出手勢或點按開始", width / 2, height * 0.46);
+  textSize(getSize(26, 20, 32));
+  text("比出手勢或點按開始", width / 2, height * 0.45);
 
-  drawButton(width / 2, height * 0.65, "開始");
+  drawButton(width / 2, height * 0.70, "開始");
 }
 
 function resultPage() {
   fill(0, 180);
-  rect(width / 2, height - 110, width, 220);
+  // 加大背景遮罩區域，避免文字與背景混在一起
+  rect(width / 2, height * 0.5, width, height);
 
   fill(255);
-  textSize(getSize(28, 20, 34));
-  text("你：" + playerMove, width / 2, height - 155);
-  text("電腦：" + computerMove, width / 2, height - 115);
+  textSize(getSize(36, 26, 42));
+  text("你：" + playerMove, width / 2, height * 0.42);
+  text("電腦：" + computerMove, width / 2, height * 0.52);
 
-  textSize(getSize(42, 30, 54));
-  text(resultText, width / 2, height - 65);
+  textSize(getSize(50, 36, 60));
+  fill(255, 255, 0); // 結果文字用黃色更加顯眼
+  text(resultText, width / 2, height * 0.65);
 
   showAnimation();
-  drawButton(width / 2, height * 0.82, "再玩一次"); // 確保按鈕在結果頁面顯示
+  drawButton(width / 2, height * 0.85, "再玩一次"); 
 }
 
 // 保留這個版本的 countdownPage，並加入剩餘時間顯示
@@ -260,18 +262,17 @@ function executeGameRound() {
 function detectMove(hand) {
   let kp = hand.keypoints;
 
-  // 改用距離判斷：如果指尖到手腕的距離 > 手指根部到手腕的距離，則視為伸直
-  // kp[0] 是手腕 (Wrist)
+  // 使用歐幾里得距離判斷手指是否伸直
   const d = (p1, p2) => dist(p1.x, p1.y, p2.x, p2.y);
   const wrist = kp[0];
 
-  let indexUp = d(kp[8], wrist) > d(kp[6], wrist);
-  let middleUp = d(kp[12], wrist) > d(kp[10], wrist);
-  let ringUp = d(kp[16], wrist) > d(kp[14], wrist);
-  let pinkyUp = d(kp[20], wrist) > d(kp[18], wrist);
+  let indexUp = d(kp[8], wrist) > d(kp[6], wrist) * 1.05;
+  let middleUp = d(kp[12], wrist) > d(kp[10], wrist) * 1.05;
+  let ringUp = d(kp[16], wrist) > d(kp[14], wrist) * 1.05;
+  let pinkyUp = d(kp[20], wrist) > d(kp[18], wrist) * 1.05;
   
-  // 大拇指比較特殊，判斷大拇指尖與小指根部的距離
-  let thumbUp = d(kp[4], kp[17]) > d(kp[3], kp[17]);
+  // 大拇指判定：看尖端與食指根部的距離
+  let thumbUp = d(kp[4], kp[5]) > d(kp[3], kp[5]) * 1.05;
 
   let count = 0;
   if (indexUp) count++;
@@ -279,21 +280,21 @@ function detectMove(hand) {
   if (ringUp) count++;
   if (pinkyUp) count++;
 
-  // 1. 優先判斷「讚」(只有大拇指朝上，其餘四指收起)
+  // 1. 優先判斷「讚」
   if (thumbUp && count === 0) {
     return "讚";
   }
 
-  // 2. 剪刀：食指與中指伸直，其餘收起
-  if (indexUp && middleUp && count === 2) {
+  // 2. 布：大部分手指伸開 (放寬到 >= 3 以應對偵測不穩)
+  if (count >= 3) return "布";
+
+  // 3. 剪刀：食指和中指伸直，且不是布的情況
+  if (indexUp && middleUp && count <= 2) {
     return "剪刀";
   }
 
-  // 3. 布：四指全開
-  if (count === 4) return "布";
-
-  // 4. 石頭：四指全部收起
-  if (count === 0) return "石頭";
+  // 4. 石頭：幾乎沒有手指伸直 (考慮到大拇指可能被誤判，設為 <= 1)
+  if (count <= 1) return "石頭";
 
   return "不明";
 }
@@ -321,40 +322,17 @@ function judge(player, computer) {
 }
 
 function drawHand() {
-  // 計算視頻顯示的縮放和偏移
-  let videoRatio = video.width / video.height;
-  let canvasRatio = width / height;
-
-  let drawW, drawH;
-  if (canvasRatio > videoRatio) {
-    drawW = width;
-    drawH = width / videoRatio;
-  } else {
-    drawH = height;
-    drawW = height * videoRatio;
-  }
-
-  let offsetX = (width - drawW) / 2;
-  let offsetY = (height - drawH) / 2;
-
-  // 計算縮放比例
-  let scaleX = drawW / video.width;
-  let scaleY = drawH / video.height;
+  // 直接使用 drawVideoFit 已經算好的全域縮放變數
+  let scaleX = vW / video.width;
+  let scaleY = vH / video.height;
 
   // 定義手部骨架連接關係
-  // ml5.js 手勢檢測有 21 個關鍵點
   const connections = [
-    // 手掌
     [0, 1], [0, 5], [0, 9], [0, 13], [0, 17],
-    // 大拇指
     [1, 2], [2, 3], [3, 4],
-    // 食指
     [5, 6], [6, 7], [7, 8],
-    // 中指
     [9, 10], [10, 11], [11, 12],
-    // 無名指
     [13, 14], [14, 15], [15, 16],
-    // 小拇指
     [17, 18], [18, 19], [19, 20]
   ];
 
@@ -371,10 +349,10 @@ function drawHand() {
           let p1 = keypoints[connection[0]];
           let p2 = keypoints[connection[1]];
           line(
-            offsetX + p1.x * scaleX,
-            offsetY + p1.y * scaleY,
-            offsetX + p2.x * scaleX,
-            offsetY + p2.y * scaleY
+            vX + p1.x * scaleX,
+            vY + p1.y * scaleY,
+            vX + p2.x * scaleX,
+            vY + p2.y * scaleY
           );
         }
 
@@ -383,8 +361,8 @@ function drawHand() {
         fill(255, 255, 0); // 亮黃色
         for (let keypoint of keypoints) {
           circle(
-            offsetX + keypoint.x * scaleX,
-            offsetY + keypoint.y * scaleY,
+            vX + keypoint.x * scaleX,
+            vY + keypoint.y * scaleY,
             10
           );
         }
@@ -392,8 +370,8 @@ function drawHand() {
         // 手腕特殊標記（更大的圓點，紅色）
         fill(255, 0, 0);
         circle(
-          offsetX + keypoints[0].x * scaleX,
-          offsetY + keypoints[0].y * scaleY,
+          vX + keypoints[0].x * scaleX,
+          vY + keypoints[0].y * scaleY,
           14
         );
       }
@@ -416,6 +394,10 @@ function showAnimation() {
 function drawButton(x, y, label) {
   let btnW = constrain(width * 0.35, 180, 260);
   let btnH = constrain(height * 0.09, 56, 76);
+
+  // 繪製陰影感
+  fill(0, 50);
+  rect(x + 4, y + 4, btnW, btnH, 20);
 
   fill(255);
   rect(x, y, btnW, btnH, 20);
@@ -485,7 +467,7 @@ function mousePressed() {
     countdownStart = millis();
   } 
   // 只有在 result 頁面點擊 "再玩一次" 按鈕
-  else if (gameState === "result" && isMouseOverButton(width / 2, height * 0.82)) {
+  else if (gameState === "result" && isMouseOverButton(width / 2, height * 0.88)) {
     gameState = "countdown";
     countdownStart = millis();
   }
