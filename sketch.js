@@ -345,9 +345,9 @@ function drawHand() {
       if (hand.confidence > 0.1) {
         let keypoints = hand.keypoints;
 
-        // 繪製骨架連接線（青色）
-        stroke(0, 255, 255);
-        strokeWeight(2);
+        // 繪製骨架連接線（明亮的藍色）
+        stroke(0, 200, 255);
+        strokeWeight(4); // 加粗線條
         for (let connection of connections) {
           let p1 = keypoints[connection[0]];
           let p2 = keypoints[connection[1]];
@@ -366,7 +366,7 @@ function drawHand() {
           circle(
             offsetX + keypoint.x * scaleX,
             offsetY + keypoint.y * scaleY,
-            8
+            10
           );
         }
 
@@ -375,7 +375,7 @@ function drawHand() {
         circle(
           offsetX + keypoints[0].x * scaleX,
           offsetY + keypoints[0].y * scaleY,
-          12
+          14
         );
       }
     }
