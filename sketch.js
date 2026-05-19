@@ -13,6 +13,7 @@ let resultText = "";
 let playerScore = 0;
 let computerScore = 0;
 let roundsPlayed = 0; // 新增：追蹤已進行的回合數
+let maxRounds = 3;    // 新增：目標總回合數
 
 let countdown = 3;
 let countdownStart;
@@ -34,6 +35,7 @@ let canTriggerNext = true;
 
 // 新增：暫停相關變數
 let pauseStartTime;
+let instructionStartTime = 0; // 新增：說明頁面動畫開始時間
 let prevState; // 用於紀錄暫停前的狀態
 let pauseSnapshot; // 用於儲存毛玻璃效果的快照
 let lastPauseTime = 0; // 用於防止手勢連續觸發暫停的冷卻時間
@@ -198,13 +200,35 @@ function loadingPage() {
   text("請確保已允許瀏覽器使用攝影機權限", width / 2, height / 2 + 50);
 }
 
-// 讓鏡頭畫面顯示在中間 60%，且自動裁剪以填滿區域（無黑邊）
-function drawVideoFit() {
+// 新增：計算影像縮放與裁剪參數，不進行繪製，供座標映射使用
+function updateVideoDimensions() {
   // 設定目標顯示區域為畫布的 60% 並置中
   vW = width * 0.6;
   vH = height * 0.6;
   vX = (width - vW) / 2;
   vY = (height - vH) / 2;
+
+  if (!videoReady || video.width === 0) return;
+
+  let videoRatio = video.width / video.height;
+  let targetRatio = vW / vH;
+
+  if (videoRatio > targetRatio) {
+    sh = video.height;
+    sw = video.height * targetRatio;
+    sx = (video.width - sw) / 2;
+    sy = 0;
+  } else {
+    sw = video.width;
+    sh = video.width / targetRatio;
+    sx = 0;
+    sy = (video.height - sh) / 2;
+  }
+}
+
+// 讓鏡頭畫面顯示在中間 60%，且自動裁剪以填滿區域（無黑邊）
+function drawVideoFit() {
+  updateVideoDimensions();
 
   let videoRatio = video.width / video.height;
   let targetRatio = vW / vH;
@@ -415,11 +439,8 @@ function instructionPage() {
   fill(0, 210);
   rect(width / 2, height / 2, width, height);
 
-  // 在黑色遮罩後繪製影像，確保影像區域是亮的
-  if (videoReady && video.width > 0) {
-    drawVideoFit();
-    drawHand();
-  }
+  // 僅計算座標不繪製影像，確保 OK 手勢偵測準確
+  updateVideoDimensions();
 
   // 小標題
   fill(255, 255, 0);
@@ -429,23 +450,43 @@ function instructionPage() {
   // 裝飾線
   stroke(255, 150);
   strokeWeight(2);
-  line(width * 0.4, height * 0.25, width * 0.6, height * 0.25);
+  line(width * 0.3, height * 0.25, width * 0.7, height * 0.25);
   noStroke();
 
   // 玩法說明區塊
   fill(220);
-  let startY = height * 0.35;
-  let lineGap = getSize(35, 28, 40);
+  let startY = height * 0.32;
+  let lineGap = getSize(38, 30, 45);
+  
+  // 計算動畫進度
+  let elapsed = millis() - instructionStartTime;
+  let lineDelay = 500; // 每行出現的間隔時間 (ms)
+  let charSpeed = 25;  // 每個字元出現的速度 (ms)
   
   textSize(getSize(24, 18, 28));
-  text("🎮 規則指南", width / 2, startY);
-  
+  text("📡 戰鬥指令傳輸中...", width / 2, startY);
+
+  let lines = [
+    "🦾 AI 偵測準備：將手掌置於中心，確保關鍵點精準鎖定",
+    "👌 手勢啟動：對著鏡頭比出「OK」，即刻啟動對戰倒數",
+    "⚡ 極速出拳：看到指令後快速變換手勢，猶豫就會敗北",
+    "❌ 時空停頓：雙手食指交叉成「X」字即可隨時暫停",
+    "🏆 榮耀爭奪：採三戰兩勝制，平手將進入無限延長賽"
+  ];
+
   fill(180);
   textSize(getSize(18, 14, 22));
-  text("1. 確保手部在鏡頭範圍內即可偵測", width / 2, startY + lineGap);
-  text("2. 比出 👌 OK 手勢即可自動開始遊戲", width / 2, startY + lineGap * 2);
-  text("3. 「出拳！」出現後，請在 3 秒內擺出手勢", width / 2, startY + lineGap * 3);
-  text("4. 偵測點對準指尖時準確度最高", width / 2, startY + lineGap * 4);
+
+  for (let i = 0; i < lines.length; i++) {
+    let startTime = (i + 1) * lineDelay;
+    if (elapsed > startTime) {
+      let charCount = floor((elapsed - startTime) / charSpeed);
+      let displayText = lines[i].substring(0, charCount);
+      // 如果還在打字中，加上一個閃爍的光標
+      if (charCount < lines[i].length) displayText += "_";
+      text(displayText, width / 2, startY + lineGap * (i + 1));
+    }
+  }
 
   drawButton(width / 2, height * 0.8, "開始遊戲");
 }
@@ -461,6 +502,18 @@ function resultPage() {
     drawHand();
   }
 
+  // 新增：延長賽提示
+  if (roundsPlayed > maxRounds) {
+    push();
+    fill(255, 50, 50); // 明亮的紅色
+    drawingContext.shadowBlur = 15;
+    drawingContext.shadowColor = color(255, 0, 0);
+    textSize(getSize(36, 26, 42));
+    textStyle(BOLD);
+    text("🔥 延長賽結果 🔥", width / 2, height * 0.12);
+    pop();
+  }
+
   // 顯示出拳資訊於影像兩側
   fill(255);
   textAlign(CENTER, CENTER);
@@ -474,9 +527,19 @@ function resultPage() {
   text(resultText, width / 2, height * 0.85);
 
   // 判斷按鈕文字：如果玩滿 3 局則顯示結算
-  let btnLabel = (roundsPlayed < 3) ? "下一局" : "查看總結算";
+  let btnLabel;
+  if (roundsPlayed < maxRounds) {
+    btnLabel = "下一局";
+  } else {
+    // roundsPlayed >= maxRounds
+    btnLabel = (playerScore === computerScore) ? "下一局 (延長賽)" : "查看總結算";
+  }
+
+  // 根據按鈕類型決定位置：下一局移到右下角，總結算留在中間
+  let btnX = btnLabel.startsWith("下一局") ? width * 0.85 : width / 2;
+
   showAnimation();
-  drawButton(width / 2, height * 0.88, btnLabel); 
+  drawButton(btnX, height * 0.88, btnLabel); 
 }
 
 // 保留這個版本的 countdownPage，並加入剩餘時間顯示
@@ -491,6 +554,18 @@ function countdownPage() {
   if (videoReady && video.width > 0) {
     drawVideoFit();
     drawHand();
+  }
+
+  // 新增：延長賽提示
+  if (roundsPlayed >= maxRounds) {
+    push();
+    fill(255, 50, 50);
+    drawingContext.shadowBlur = 15;
+    drawingContext.shadowColor = color(255, 0, 0);
+    textSize(getSize(36, 26, 42));
+    textStyle(BOLD);
+    text("🔥 延長賽 (DEUCE) 🔥", width / 2, height * 0.12);
+    pop();
   }
 
   fill(255);
@@ -558,7 +633,8 @@ function gameOverPage() {
   textSize(getSize(32, 22, 42));
   text(`最終成績 - 你 ${playerScore} : 電腦 ${computerScore}`, width / 2, height * 0.55);
   
-  drawButton(width / 2, height * 0.8, "回到主選單");
+  drawButton(width / 2, height * 0.72, "回到主選單");
+  drawButton(width / 2, height * 0.85, "挑戰五戰三勝");
 
   // 繪製紙屑特效
   drawConfetti();
@@ -764,6 +840,7 @@ function drawButton(x, y, label) {
   rect(x, y, btnW, btnH, 20);
 
   fill(0);
+  textAlign(CENTER, CENTER); // 確保文字在按鈕正中心
   textSize(getSize(28, 22, 34));
   text(label, x, y);
 }
@@ -832,7 +909,8 @@ function checkHandTrigger() {
   // 情境二：在「等待開始」或「結算結果」畫面，偵測到「OK」手勢才自動開始
   if (canTriggerNext && (gameState === "instructions" || gameState === "result") && 
            (detectedGesture === "OK")) {
-    if (gameState === "result" && roundsPlayed >= 3) {
+    // 如果是結果頁面且已達最大局數，且分數不相等才結束；否則（說明頁、局數未滿或平手）進入下一局
+    if (gameState === "result" && roundsPlayed >= maxRounds && playerScore !== computerScore) {
       gameState = "gameOver";
       if (playerScore > computerScore) triggerConfetti();
     } else {
@@ -939,28 +1017,47 @@ function mousePressed() {
   else if (gameState === "cover" && isMouseOverButton(width / 2, height * 0.7)) {
     // 封面頁面 -> 進入說明頁面
     gameState = "instructions";
+    instructionStartTime = millis(); // 初始化開始時間
   } 
   else if (gameState === "instructions" && isMouseOverButton(width / 2, height * 0.8)) {
     // 說明頁面 -> 開始倒數
     playerScore = 0;
     computerScore = 0;
     roundsPlayed = 0;
+    maxRounds = 3; // 預設為三戰兩勝（三回合）
     gameState = "countdown";
     countdownStart = millis();
   } 
-  else if (gameState === "result" && isMouseOverButton(width / 2, height * 0.88)) {
+  else if (gameState === "result") {
     // 結果頁面 -> 下一局或總結算
-    if (roundsPlayed < 3) {
-      gameState = "countdown";
-      countdownStart = millis();
-    } else {
-      gameState = "gameOver";
-      if (playerScore > computerScore) triggerConfetti();
+    let btnX = (roundsPlayed < maxRounds || playerScore === computerScore) ? width * 0.85 : width / 2;
+    
+    if (isMouseOverButton(btnX, height * 0.88)) {
+      // 如果回合數未達上限，或者回合數已達上限但分數平手，則繼續下一局
+      if (roundsPlayed < maxRounds || playerScore === computerScore) {
+        gameState = "countdown";
+        countdownStart = millis();
+      } else {
+        // 回合數已達上限且有勝負，進入總結算
+        gameState = "gameOver";
+        if (playerScore > computerScore) triggerConfetti();
+      }
     }
   }
-  else if (gameState === "gameOver" && isMouseOverButton(width / 2, height * 0.8)) {
+  else if (gameState === "gameOver") {
     // 總結算頁面 -> 回到主選單
-    gameState = "cover";
+    if (isMouseOverButton(width / 2, height * 0.72)) {
+      gameState = "cover";
+    } 
+    // 挑戰五戰三勝按鈕
+    else if (isMouseOverButton(width / 2, height * 0.85)) {
+      playerScore = 0;
+      computerScore = 0;
+      roundsPlayed = 0;
+      maxRounds = 5; // 設定為五回合
+      gameState = "countdown";
+      countdownStart = millis();
+    }
   }
 }
 
