@@ -13,6 +13,9 @@ let computerScore = 0;
 let countdown = 3;
 let countdownStart;
 
+// 用於計算影像縮放與偏移的變數，確保手部點位繪製能對齊畫面
+let vW, vH, vX, vY;
+
 function preload() {
   handPose = ml5.handPose({ flipped: true });
 }
@@ -37,9 +40,12 @@ function gotHands(results) {
 function draw() {
   background(20);
 
+  if (video.width > 0) { // 確保攝影機已啟動
   drawVideoFit();
+    drawHand();
+  }
+
   drawTopBar();
-  drawHand();
 
   if (gameState === "start") {
     startPage();
@@ -56,7 +62,6 @@ function drawVideoFit() {
   let canvasRatio = width / height;
 
   let drawW, drawH;
-
   if (canvasRatio > videoRatio) {
     drawW = width;
     drawH = width / videoRatio;
@@ -65,10 +70,12 @@ function drawVideoFit() {
     drawW = height * videoRatio;
   }
 
-  let x = (width - drawW) / 2;
-  let y = (height - drawH) / 2;
+  vW = drawW;
+  vH = drawH;
+  vX = (width - vW) / 2;
+  vY = (height - vH) / 2;
 
-  image(video, x, y, drawW, drawH);
+  image(video, vX, vY, vW, vH);
 }
 
 function drawTopBar() {
@@ -133,8 +140,11 @@ function resultPage() {
 }
 
 function playGame() {
-  if (hands.length > 0) {
-    playerMove = detectMove(hands[0]);
+  // 尋找第一個信心值足夠的手（參考範例代碼）
+  let activeHand = hands.find(h => h.confidence > 0.1);
+
+  if (activeHand) {
+    playerMove = detectMove(activeHand);
   } else {
     playerMove = "沒偵測到";
   }
@@ -191,14 +201,26 @@ function judge(player, computer) {
 }
 
 function drawHand() {
-  if (hands.length > 0) {
-    let hand = hands[0];
-
-    fill(255, 255, 0);
+  // 遍歷所有偵測到的手
+  for (let hand of hands) {
+    // 只繪製信心值大於 0.1 的手，增加穩定性
+    if (hand.confidence > 0.1) {
+      // 根據左右手顯示不同顏色（參考範例代碼）
+      if (hand.handedness === "Left") {
+        fill(255, 0, 255);
+      } else {
+        fill(255, 255, 0);
+      }
     noStroke();
 
+      // 計算座標縮放比例
+      let scaleX = vW / video.width;
+      let scaleY = vH / video.height;
+
     for (let point of hand.keypoints) {
-      circle(point.x, point.y, getSize(10, 8, 14));
+        // 將點位從影像空間座標轉換到畫布顯示座標
+        circle(vX + point.x * scaleX, vY + point.y * scaleY, getSize(10, 8, 14));
+      }
     }
   }
 }
