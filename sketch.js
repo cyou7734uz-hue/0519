@@ -1,7 +1,7 @@
 let video, handPose;
 let hands = [];
 
-let gameState = "start";
+let gameState = "cover"; // 從封面開始
 
 let playerMove = "等待中";
 let computerMove = "等待中";
@@ -77,36 +77,40 @@ function gotHands(results) {
 function draw() {
   background(20);
 
-  // 如果鏡頭還沒準備好，顯示讀取畫面並中斷後���繪製
-  if (!videoReady || video.width === 0) {
-    loadingPage();
-    return;
+  // 1. 如果鏡頭準備好了，就在背景繪製影像（封面和說明頁會蓋在它上面）
+  if (videoReady && video.width > 0) {
+    drawVideoFit();
+    drawHand();
+    
+    // 偵測調試信息（選用，僅在開發時顯示）
+    /*
+    fill(255);
+    textSize(14);
+    textAlign(LEFT, TOP);
+    text("鏡頭已就緒 - 偵測中", 10, 10);
+    textAlign(CENTER, CENTER);
+    */
   }
 
-  drawVideoFit();
-  drawHand();
-  
-  // 調試信息：顯示手的偵測狀態
-  fill(255);
-  textSize(14);
-  textAlign(LEFT, TOP);
-  text("偵測到的手: " + hands.length + " 隻", 10, 10);
-  if (hands.length > 0) {
-    text("信心值: " + hands[0].confidence.toFixed(2), 10, 30);
-  }
-  textAlign(CENTER, CENTER);
-
-  drawTopBar();
-
-  if (gameState === "start") {
-    startPage();
-    checkHandTrigger(); // 在開始頁面偵測手勢觸發
-  } else if (gameState === "countdown") {
-    countdownPage();
-    checkHandTrigger(); // 在倒數階段也要偵測手勢（出拳）
-  } else if (gameState === "result") {
-    resultPage();
-    checkHandTrigger(); // 在結果頁面偵測手勢觸發
+  // 2. 根據遊戲狀態繪製 UI
+  if (gameState === "cover") {
+    coverPage();
+  } else if (gameState === "instructions") {
+    instructionPage();
+    if (videoReady) checkHandTrigger(); // 鏡頭好了才開放手勢自動開始
+  } else {
+    // 進入「倒數」或「結果」狀態，必須要有鏡頭
+    if (!videoReady) {
+      loadingPage(); // 如果還沒啟動好，就在此時顯示加載頁面
+    } else {
+      drawTopBar();
+      if (gameState === "countdown") {
+        countdownPage();
+      } else if (gameState === "result") {
+        resultPage();
+      }
+      checkHandTrigger();
+    }
   }
 }
 
@@ -178,18 +182,57 @@ function drawTopBar() {
   text("你：" + playerScore + "   電腦：" + computerScore, width / 2, 30);
 }
 
-function startPage() {
-  fill(0, 180);
+function coverPage() {
+  // 背景遮罩
+  fill(0, 220);
   rect(width / 2, height / 2, width, height);
 
+  // 遊戲標題
+  push();
+  fill(255, 255, 0); // 黃色標題
+  textSize(getSize(80, 50, 100));
+  text("剪刀石頭布", width / 2, height * 0.4);
+  
   fill(255);
-  textSize(getSize(56, 40, 72));
-  text("剪刀石頭布", width / 2, height * 0.30);
+  textSize(getSize(24, 18, 30));
+  text("AI 手勢辨識對戰系統", width / 2, height * 0.5);
+  pop();
 
-  textSize(getSize(26, 20, 32));
-  text("比出手勢或點按開始", width / 2, height * 0.45);
+  drawButton(width / 2, height * 0.7, "進入遊戲");
+}
 
-  drawButton(width / 2, height * 0.70, "開始");
+function instructionPage() {
+  // 背景遮罩
+  fill(0, 210);
+  rect(width / 2, height / 2, width, height);
+
+  // 小標題
+  fill(255, 255, 0);
+  textSize(getSize(40, 30, 50));
+  text("遊戲說明", width / 2, height * 0.2);
+  
+  // 裝飾線
+  stroke(255, 150);
+  strokeWeight(2);
+  line(width * 0.4, height * 0.25, width * 0.6, height * 0.25);
+  noStroke();
+
+  // 玩法說明區塊
+  fill(220);
+  let startY = height * 0.35;
+  let lineGap = getSize(35, 28, 40);
+  
+  textSize(getSize(24, 18, 28));
+  text("🎮 規則指南", width / 2, startY);
+  
+  fill(180);
+  textSize(getSize(18, 14, 22));
+  text("1. 確保手部在鏡頭範圍內即可偵測", width / 2, startY + lineGap);
+  text("2. 比出 ✊、✌️、✋ 或 👍 即可自動開始", width / 2, startY + lineGap * 2);
+  text("3. 「出拳！」出現後，請在 3 秒內擺出手勢", width / 2, startY + lineGap * 3);
+  text("4. 偵測點對準指尖時準確度最高", width / 2, startY + lineGap * 4);
+
+  drawButton(width / 2, height * 0.8, "開始遊戲");
 }
 
 function resultPage() {
@@ -395,6 +438,15 @@ function drawButton(x, y, label) {
   let btnW = constrain(width * 0.35, 180, 260);
   let btnH = constrain(height * 0.09, 56, 76);
 
+  // 新增：呼吸燈（發光）效果
+  push();
+  let pulse = (sin(frameCount * 0.06) + 1) / 2; // 產生 0 到 1 之間的平滑循環
+  noFill();
+  stroke(255, 255, 0, pulse * 200); // 隨呼吸變化的黃色發光感
+  strokeWeight(2 + pulse * 6);      // 邊框粗細隨之變化
+  rect(x, y, btnW + pulse * 10, btnH + pulse * 10, 20); // 稍微放大的外框
+  pop();
+
   // 繪製陰影感
   fill(0, 50);
   rect(x + 4, y + 4, btnW, btnH, 20);
@@ -447,7 +499,7 @@ function checkHandTrigger() {
   }
   
   // 情境二：在「等待開始」或「結算結果」畫面，偵測到任何手勢就自動開始
-  if (canTriggerNext && (gameState === "start" || gameState === "result") && 
+  if (canTriggerNext && (gameState === "instructions" || gameState === "result") && 
            (detectedGesture !== "不明" && detectedGesture !== "等待中")) {
     gameState = "countdown";
     countdownStart = millis();
@@ -461,12 +513,15 @@ function mousePressed() {
     window.location.reload();
   }
 
-  // 只有在 start 頁面點擊 "開始" 按鈕
-  if (gameState === "start" && isMouseOverButton(width / 2, height * 0.65)) {
+  // 封面頁面 -> 進入說明頁面
+  if (gameState === "cover" && isMouseOverButton(width / 2, height * 0.7)) {
+    gameState = "instructions";
+  } 
+  // 說明頁面 -> 開始倒數
+  else if (gameState === "instructions" && isMouseOverButton(width / 2, height * 0.8)) {
     gameState = "countdown";
     countdownStart = millis();
   } 
-  // 只有在 result 頁面點擊 "再玩一次" 按鈕
   else if (gameState === "result" && isMouseOverButton(width / 2, height * 0.88)) {
     gameState = "countdown";
     countdownStart = millis();
