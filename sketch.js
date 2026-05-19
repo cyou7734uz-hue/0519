@@ -318,26 +318,65 @@ function drawHand() {
   let offsetX = (width - drawW) / 2;
   let offsetY = (height - drawH) / 2;
 
+  // 計算縮放比例
+  let scaleX = drawW / video.width;
+  let scaleY = drawH / video.height;
+
+  // 定義手部骨架連接關係
+  // ml5.js 手勢檢測有 21 個關鍵點
+  const connections = [
+    // 手掌
+    [0, 1], [0, 5], [0, 9], [0, 13], [0, 17],
+    // 大拇指
+    [1, 2], [2, 3], [3, 4],
+    // 食指
+    [5, 6], [6, 7], [7, 8],
+    // 中指
+    [9, 10], [10, 11], [11, 12],
+    // 無名指
+    [13, 14], [14, 15], [15, 16],
+    // 小拇指
+    [17, 18], [18, 19], [19, 20]
+  ];
+
   // 遍歷所有偵測到的手
   if (hands.length > 0) {
     for (let hand of hands) {
       if (hand.confidence > 0.1) {
-        // 根據左右手顯示不同顏色
-        if (hand.handedness == "Left") {
-          fill(255, 0, 255);
-        } else {
-          fill(255, 255, 0);
+        let keypoints = hand.keypoints;
+
+        // 繪製骨架連接線（青色）
+        stroke(0, 255, 255);
+        strokeWeight(2);
+        for (let connection of connections) {
+          let p1 = keypoints[connection[0]];
+          let p2 = keypoints[connection[1]];
+          line(
+            offsetX + p1.x * scaleX,
+            offsetY + p1.y * scaleY,
+            offsetX + p2.x * scaleX,
+            offsetY + p2.y * scaleY
+          );
         }
+
+        // 繪製關鍵點（亮黃色圓點）
         noStroke();
-
-        // 計算縮放比例
-        let scaleX = drawW / video.width;
-        let scaleY = drawH / video.height;
-
-        // 繪製所有手指關鍵點
-        for (let keypoint of hand.keypoints) {
-          circle(offsetX + keypoint.x * scaleX, offsetY + keypoint.y * scaleY, 10);
+        fill(255, 255, 0); // 亮黃色
+        for (let keypoint of keypoints) {
+          circle(
+            offsetX + keypoint.x * scaleX,
+            offsetY + keypoint.y * scaleY,
+            8
+          );
         }
+
+        // 手腕特殊標記（更大的圓點，紅色）
+        fill(255, 0, 0);
+        circle(
+          offsetX + keypoints[0].x * scaleX,
+          offsetY + keypoints[0].y * scaleY,
+          12
+        );
       }
     }
   }
