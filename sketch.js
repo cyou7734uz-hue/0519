@@ -7,10 +7,12 @@ let particles = []; // 背景粒子數組
 
 let playerMove = "等待中";
 let computerMove = "等待中";
+let confetti = []; // 新增：彩色紙屑粒子數組
 let resultText = "";
 
 let playerScore = 0;
 let computerScore = 0;
+let roundsPlayed = 0; // 新增：追蹤已進行的回合數
 
 let countdown = 3;
 let countdownStart;
@@ -116,21 +118,6 @@ function draw() {
   let bgY = (height - drawH) / 2;
   image(backgroundImg, bgX, bgY, drawW, drawH);
 
-  // 1. 如果鏡頭準備好了，且不在「封面」狀態下，才繪製影像
-  if (videoReady && video.width > 0 && gameState !== "cover") {
-    drawVideoFit();
-    drawHand();
-    
-    // 偵測調試信息（選用，僅在開發時顯示）
-    /*
-    fill(255);
-    textSize(14);
-    textAlign(LEFT, TOP);
-    text("鏡頭已就緒 - 偵測中", 10, 10);
-    textAlign(CENTER, CENTER);
-    */
-  }
-
   drawParticles(); // 繪製漂浮粒子特效
 
   // 2. 根據遊戲狀態繪製 UI
@@ -146,12 +133,14 @@ function draw() {
     if (!videoReady) {
       loadingPage(); // 如果還沒啟動好，就在此時顯示加載頁面
     } else {
-      drawTopBar();
       if (gameState === "countdown") {
         countdownPage();
       } else if (gameState === "result") {
         resultPage();
+      } else if (gameState === "gameOver") {
+        gameOverPage();
       }
+      drawTopBar(); // 移至最後繪製，確保在影像上方
       checkHandTrigger();
     }
   }
@@ -298,6 +287,9 @@ function pausePage() {
   // 半透明深色遮罩，讓文字更易讀 (Alpha 值稍微調低讓模糊效果透出來)
   fill(0, 120);
   rect(width / 2, height / 2, width, height);
+
+  // 新增：繪製背景科技感旋轉圓盤
+  drawTechDecoration();
   
   // 打字機動畫效果：根據經過的時間計算當前應顯示的字數
   let fullText = "遊戲暫停";
@@ -305,13 +297,86 @@ function pausePage() {
   let displayText = fullText.substring(0, charCount);
 
   fill(255);
-  textSize(getSize(50, 40, 60));
-  text(displayText, width / 2, height * 0.4);
+  textAlign(CENTER, CENTER);
+  textSize(getSize(40, 30, 50));
+  // 將標題放回畫面中間
+  text(displayText, width / 2, height * 0.3);
+
+  // 當前得分統計區塊：移至畫面中間
+  push();
+  rectMode(CENTER);
+  // 繪製帶有電子邊框感的背景框
+  fill(255, 255, 255, 20); 
+  stroke(0, 200, 255, 150); // 藍色科技感邊框
+  strokeWeight(2);
+  // 增加發光效果
+  drawingContext.shadowBlur = 15;
+  drawingContext.shadowColor = color(0, 200, 255);
+  
+  let blockW = getSize(160, 130, 200);
+  let blockH = getSize(120, 100, 150);
+  rect(width / 2, height * 0.45, blockW, blockH, 10);
+
+  noStroke();
+  drawingContext.shadowBlur = 0; // 關閉文字發光以保持清晰
+  fill(255, 255, 0); // 黃色小標題
+  textSize(getSize(20, 16, 26));
+  text("🏆 當前得分", width / 2, height * 0.41);
+
+  fill(255); // 白色數值
+  textSize(getSize(18, 14, 24));
+  text("你: " + playerScore, width / 2, height * 0.47);
+  text("電腦: " + computerScore, width / 2, height * 0.53);
+  pop();
   
   // 繪製暫停頁面的按鈕
-  // 使用固定的座標，方便在 mousePressed 中判定
-  drawButton(width / 2, height * 0.55, "繼續遊戲");
-  drawButton(width / 2, height * 0.70, "回到主選單");
+  // 將按鈕放回畫面中間下半部
+  drawButton(width / 2, height * 0.65, "繼續遊戲");
+  drawButton(width / 2, height * 0.78, "回到主選單");
+}
+
+// 新增：暫停頁面的科技感背景裝飾
+function drawTechDecoration() {
+  let centerX = width / 2;
+  let centerY = height / 2;
+  let baseSize = min(width, height) * 0.7;
+
+  push();
+  translate(centerX, centerY);
+  noFill();
+  
+  // 第一層：最外圈虛線 (緩慢順時針)
+  push();
+  rotate(frameCount * 0.005);
+  stroke(0, 200, 255, 50);
+  strokeWeight(1);
+  drawingContext.setLineDash([5, 15]);
+  ellipse(0, 0, baseSize * 1.3);
+  pop();
+
+  // 第二層：中圈裝飾弧線 (逆時針)
+  push();
+  rotate(-frameCount * 0.01);
+  stroke(0, 200, 255, 100);
+  strokeWeight(3);
+  drawingContext.setLineDash([120, 60]);
+  arc(0, 0, baseSize, baseSize, 0, HALF_PI);
+  arc(0, 0, baseSize, baseSize, PI, PI + HALF_PI);
+  pop();
+
+  // 第三層：內圈刻度 (順時針)
+  push();
+  rotate(frameCount * 0.015);
+  stroke(255, 255, 0, 70);
+  strokeWeight(2);
+  for (let i = 0; i < 12; i++) {
+    let angle = TWO_PI / 12 * i;
+    line(cos(angle) * baseSize * 0.4, sin(angle) * baseSize * 0.4, cos(angle) * baseSize * 0.45, sin(angle) * baseSize * 0.45);
+  }
+  pop();
+
+  drawingContext.setLineDash([]); // 重置虛線樣式，避免影響其他繪製
+  pop();
 }
 
 function coverPage() {
@@ -350,6 +415,12 @@ function instructionPage() {
   fill(0, 210);
   rect(width / 2, height / 2, width, height);
 
+  // 在黑色遮罩後繪製影像，確保影像區域是亮的
+  if (videoReady && video.width > 0) {
+    drawVideoFit();
+    drawHand();
+  }
+
   // 小標題
   fill(255, 255, 0);
   textSize(getSize(40, 30, 50));
@@ -372,7 +443,7 @@ function instructionPage() {
   fill(180);
   textSize(getSize(18, 14, 22));
   text("1. 確保手部在鏡頭範圍內即可偵測", width / 2, startY + lineGap);
-  text("2. 比出 ✊、✌️、✋ 或 👍 即可自動開始", width / 2, startY + lineGap * 2);
+  text("2. 比出 👌 OK 手勢即可自動開始遊戲", width / 2, startY + lineGap * 2);
   text("3. 「出拳！」出現後，請在 3 秒內擺出手勢", width / 2, startY + lineGap * 3);
   text("4. 偵測點對準指尖時準確度最高", width / 2, startY + lineGap * 4);
 
@@ -383,6 +454,12 @@ function resultPage() {
   fill(0, 180);
   // 加大背景遮罩區域，避免文字與背景混在一起
   rect(width / 2, height * 0.5, width, height);
+
+  // 在黑色遮罩後繪製影像
+  if (videoReady && video.width > 0) {
+    drawVideoFit();
+    drawHand();
+  }
 
   // 顯示出拳資訊於影像兩側
   fill(255);
@@ -396,8 +473,10 @@ function resultPage() {
   fill(255, 255, 0); // 結果文字用黃色更加顯眼
   text(resultText, width / 2, height * 0.85);
 
+  // 判斷按鈕文字：如果玩滿 3 局則顯示結算
+  let btnLabel = (roundsPlayed < 3) ? "下一局" : "查看總結算";
   showAnimation();
-  drawButton(width / 2, height * 0.85, "再玩一次"); 
+  drawButton(width / 2, height * 0.88, btnLabel); 
 }
 
 // 保留這個版本的 countdownPage，並加入剩餘時間顯示
@@ -407,6 +486,12 @@ function countdownPage() {
 
   fill(0, 180);
   rect(width / 2, height / 2, width, height);
+
+  // 在黑色遮罩後繪製影像
+  if (videoReady && video.width > 0) {
+    drawVideoFit();
+    drawHand();
+  }
 
   fill(255);
 
@@ -442,9 +527,82 @@ function countdownPage() {
   }
 }
 
+// 新增：遊戲結束總結算頁面
+function gameOverPage() {
+  fill(0, 220);
+  rect(width / 2, height / 2, width, height);
+  
+  let finalWinner = "";
+  let displayColor;
+  
+  if (playerScore > computerScore) {
+    finalWinner = "最終勝利！🏆";
+    displayColor = color(255, 215, 0); // 金色
+    drawingContext.shadowBlur = 30;
+    drawingContext.shadowColor = displayColor;
+  } else if (playerScore < computerScore) {
+    finalWinner = "戰敗...再接再厲 💀";
+    displayColor = color(150); // 灰色
+  } else {
+    finalWinner = "握手言和 🤝";
+    displayColor = color(255);
+  }
+  
+  let pulse = sin(frameCount * 0.1) * 10;
+  fill(displayColor);
+  textSize(getSize(70, 45, 90));
+  text(finalWinner, width / 2, height * 0.4 + pulse);
+  
+  drawingContext.shadowBlur = 0;
+  fill(255);
+  textSize(getSize(32, 22, 42));
+  text(`最終成績 - 你 ${playerScore} : 電腦 ${computerScore}`, width / 2, height * 0.55);
+  
+  drawButton(width / 2, height * 0.8, "回到主選單");
+
+  // 繪製紙屑特效
+  drawConfetti();
+}
+
+// 新增：觸發紙屑噴發特效
+function triggerConfetti() {
+  confetti = [];
+  for (let i = 0; i < 150; i++) {
+    confetti.push({
+      x: width / 2,
+      y: height / 2,
+      vx: random(-10, 10),
+      vy: random(-20, -5),
+      size: random(5, 15),
+      color: color(random(255), random(255), random(255)),
+      angle: random(TWO_PI),
+      spin: random(-0.2, 0.2)
+    });
+  }
+}
+
+// 新增：更新並繪製紙屑
+function drawConfetti() {
+  for (let c of confetti) {
+    c.x += c.vx;
+    c.y += c.vy;
+    c.vy += 0.5; // 重力加速度
+    c.angle += c.spin;
+    
+    push();
+    translate(c.x, c.y);
+    rotate(c.angle);
+    fill(c.color);
+    noStroke();
+    // 繪製長方形紙屑
+    rect(0, 0, c.size, c.size * 0.6);
+    pop();
+  }
+}
+
 // 將原先的 playGame 函式更名為 executeGameRound
 function executeGameRound() {
-  // playerMove 已經由 checkHandTrigger 或 countdownPage 設定
+  roundsPlayed++; // 回合數增加
   computerMove = random(["剪刀", "石頭", "布"]);
   resultText = judge(playerMove, computerMove);
 }
@@ -656,6 +814,11 @@ function checkHandTrigger() {
 
   let detectedGesture = detectMove(activeHand);
 
+  // 新增：在準備或結算階段，偵測到 OK 即顯示 Ready 特效
+  if ((gameState === "instructions" || gameState === "result") && detectedGesture === "OK") {
+    drawReadyIndicator(activeHand);
+  }
+
   // 情境一：在「出拳！」階段，偵測到有效手勢立刻進行結算
   if (gameState === "countdown" && countdown <= 0 && !moveMade && 
       (detectedGesture === "剪刀" || detectedGesture === "石頭" || detectedGesture === "布")) {
@@ -669,8 +832,13 @@ function checkHandTrigger() {
   // 情境二：在「等待開始」或「結算結果」畫面，偵測到「OK」手勢才自動開始
   if (canTriggerNext && (gameState === "instructions" || gameState === "result") && 
            (detectedGesture === "OK")) {
-    gameState = "countdown";
-    countdownStart = millis();
+    if (gameState === "result" && roundsPlayed >= 3) {
+      gameState = "gameOver";
+      if (playerScore > computerScore) triggerConfetti();
+    } else {
+      gameState = "countdown";
+      countdownStart = millis();
+    }
     canTriggerNext = false; // 標記已觸發，避免在倒數時重複重置時間
   }
 }
@@ -708,6 +876,39 @@ function drawPauseIndicator(p1, p2) {
   pop();
 }
 
+// 新增：在偵測到 OK 手勢時繪製 Ready 特效
+function drawReadyIndicator(hand) {
+  let scaleX = vW / sw;
+  let scaleY = vH / sh;
+  let kp = hand.keypoints;
+
+  // 使用手掌中心點 (中指根部 Landmark 9)
+  let midX = kp[9].x;
+  let midY = kp[9].y;
+
+  // 轉換為畫布鏡像座標
+  let canvasX = vX + vW - (midX - sx) * scaleX;
+  let canvasY = vY + (midY - sy) * scaleY;
+
+  push();
+  translate(canvasX, canvasY);
+  
+  // 繪製發光背景
+  let pulse = sin(frameCount * 0.1) * 5;
+  fill(0, 255, 100, 180);
+  noStroke();
+  drawingContext.shadowBlur = 20;
+  drawingContext.shadowColor = color(0, 255, 100);
+  circle(0, 0, 80 + pulse);
+  
+  // 繪製文字
+  fill(255);
+  textSize(22);
+  textStyle(BOLD);
+  text("READY!", 0, 0);
+  pop();
+}
+
 function mousePressed() {
   // 1. 檢查是否點擊右上角暫停按鈕 (僅在遊戲進行中可用)
   if (gameState !== "cover" && gameState !== "instructions") {
@@ -725,11 +926,11 @@ function mousePressed() {
   // 2. 根據狀態判定不同按鈕
   if (gameState === "paused") {
     // 繼續遊戲按鈕
-    if (isMouseOverButton(width / 2, height * 0.55)) {
+    if (isMouseOverButton(width / 2, height * 0.65)) {
       togglePause();
     }
     // 回到主選單按鈕
-    else if (isMouseOverButton(width / 2, height * 0.70)) {
+    else if (isMouseOverButton(width / 2, height * 0.78)) {
       gameState = "cover";
       playerScore = 0;
       computerScore = 0;
@@ -741,13 +942,25 @@ function mousePressed() {
   } 
   else if (gameState === "instructions" && isMouseOverButton(width / 2, height * 0.8)) {
     // 說明頁面 -> 開始倒數
+    playerScore = 0;
+    computerScore = 0;
+    roundsPlayed = 0;
     gameState = "countdown";
     countdownStart = millis();
   } 
   else if (gameState === "result" && isMouseOverButton(width / 2, height * 0.88)) {
-    // 結果頁面 -> 再玩一次
-    gameState = "countdown";
-    countdownStart = millis();
+    // 結果頁面 -> 下一局或總結算
+    if (roundsPlayed < 3) {
+      gameState = "countdown";
+      countdownStart = millis();
+    } else {
+      gameState = "gameOver";
+      if (playerScore > computerScore) triggerConfetti();
+    }
+  }
+  else if (gameState === "gameOver" && isMouseOverButton(width / 2, height * 0.8)) {
+    // 總結算頁面 -> 回到主選單
+    gameState = "cover";
   }
 }
 
