@@ -1,7 +1,9 @@
 let video, handPose;
 let hands = [];
+let backgroundImg;
 
 let gameState = "cover"; // 從封面開始
+let particles = []; // 背景粒子數組
 
 let playerMove = "等待中";
 let computerMove = "等待中";
@@ -29,6 +31,7 @@ let canTriggerNext = true;
 
 function preload() {
   handPose = ml5.handPose({ flipped: true });
+  backgroundImg = loadImage('圖片/背景.png');
 }
 
 function setup() {
@@ -59,6 +62,18 @@ function setup() {
   textAlign(CENTER, CENTER);
   rectMode(CENTER);
   
+  // 初始化背景粒子
+  for (let i = 0; i < 60; i++) {
+    particles.push({
+      x: random(width),
+      y: random(height),
+      vx: random(-0.6, 0.6), // 水平漂移速度
+      vy: random(-0.6, 0.6), // 垂直漂移速度
+      size: random(2, 5),
+      alpha: random(50, 150)
+    });
+  }
+
   // 監聽方向變化（手機專用）
   window.addEventListener('orientationchange', handleOrientationChange);
 }
@@ -75,10 +90,25 @@ function gotHands(results) {
 }
 
 function draw() {
-  background(20);
+  // 保持比例縮放背景圖 (Cover 模式)
+  let imgRatio = backgroundImg.width / backgroundImg.height;
+  let canvasRatio = width / height;
+  let drawW, drawH;
 
-  // 1. 如果鏡頭準備好了，就在背景繪製影像（封面和說明頁會蓋在它上面）
-  if (videoReady && video.width > 0) {
+  if (canvasRatio > imgRatio) {
+    drawW = width;
+    drawH = width / imgRatio;
+  } else {
+    drawH = height;
+    drawW = height * imgRatio;
+  }
+
+  let bgX = (width - drawW) / 2;
+  let bgY = (height - drawH) / 2;
+  image(backgroundImg, bgX, bgY, drawW, drawH);
+
+  // 1. 如果鏡頭準備好了，且不在「封面」狀態下，才繪製影像
+  if (videoReady && video.width > 0 && gameState !== "cover") {
     drawVideoFit();
     drawHand();
     
@@ -91,6 +121,8 @@ function draw() {
     textAlign(CENTER, CENTER);
     */
   }
+
+  drawParticles(); // 繪製漂浮粒子特效
 
   // 2. 根據遊戲狀態繪製 UI
   if (gameState === "cover") {
@@ -111,6 +143,25 @@ function draw() {
       }
       checkHandTrigger();
     }
+  }
+}
+
+// 新增：繪製背景漂浮粒子
+function drawParticles() {
+  noStroke();
+  for (let p of particles) {
+    // 更新粒子位置
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // 邊界檢查（讓粒子在螢幕間循環滾動）
+    if (p.x < 0) p.x = width;
+    if (p.x > width) p.x = 0;
+    if (p.y < 0) p.y = height;
+    if (p.y > height) p.y = 0;
+
+    fill(255, 255, 150, p.alpha); // 淡淡的螢光黃
+    circle(p.x, p.y, p.size);
   }
 }
 
@@ -183,19 +234,31 @@ function drawTopBar() {
 }
 
 function coverPage() {
-  // 背景遮罩
-  fill(0, 220);
-  rect(width / 2, height / 2, width, height);
-
   // 遊戲標題
   push();
-  fill(255, 255, 0); // 黃色標題
+  // 計算上下漂浮的位移：使用 sin 產生平滑循環，15 是漂浮半徑，0.05 是速度
+  let yOffset = sin(frameCount * 0.05) * 15;
+
+  // 切換到 HSB 模式來實現色彩循環
+  colorMode(HSB, 360, 100, 100);
+  let h = (frameCount * 2) % 360; // 隨時間變化的色相 (2 控制速度)
+
+  // 增加霓虹流光發光效果 (利用畫布原生 drawingContext)
+  drawingContext.shadowBlur = 20;
+  drawingContext.shadowColor = color(h, 80, 100);
+
+  fill(h, 80, 100); // 使用動態色相
   textSize(getSize(80, 50, 100));
-  text("剪刀石頭布", width / 2, height * 0.4);
+  text("剪刀石頭布", width / 2, height * 0.4 + yOffset);
   
-  fill(255);
+  // 關閉發光效果，避免影響副標題
+  drawingContext.shadowBlur = 0;
+  fill(0, 0, 100); // HSB 下的純白色
   textSize(getSize(24, 18, 30));
-  text("AI 手勢辨識對戰系統", width / 2, height * 0.5);
+  text("AI 手勢辨識對戰系統", width / 2, height * 0.5 + yOffset);
+  
+  // 重要：切換回 RGB 模式，以免影響程式其他部分的繪製
+  colorMode(RGB, 255);
   pop();
 
   drawButton(width / 2, height * 0.7, "進入遊戲");
