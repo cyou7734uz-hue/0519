@@ -34,9 +34,12 @@ let canTriggerNext = true;
 let pauseStartTime;
 let prevState; // 用於紀錄暫停前的狀態
 let pauseSnapshot; // 用於儲存毛玻璃效果的快照
+let lastPauseTime = 0; // 用於防止手勢連續觸發暫停的冷卻時間
+const GESTURE_COOLDOWN = 1500; // 暫停觸發冷卻時間 (毫秒)
 
 function preload() {
-  handPose = ml5.handPose({ flipped: true });
+  // 移除內部鏡像，改由 drawHand 手動映射，以利於配合畫布縮放與裁剪
+  handPose = ml5.handPose(); 
   backgroundImg = loadImage('圖片/背景.png');
 }
 
@@ -388,7 +391,7 @@ function resultPage() {
   text("你出了\n" + playerMove, width * 0.1, height / 2);
   text("電腦出\n" + computerMove, width * 0.9, height / 2);
 
-  // 結果顯示在影像下方
+  // 結果顯示在影像下方 (60% 高度以下)
   textSize(getSize(50, 36, 60));
   fill(255, 255, 0); // 結果文字用黃色更加顯眼
   text(resultText, width / 2, height * 0.85);
@@ -472,6 +475,11 @@ function detectMove(hand) {
     return "讚";
   }
 
+  // 2. OK 手勢：大拇指(4)與食指(8)接觸，其餘三指伸直
+  if (!indexUp && middleUp && ringUp && pinkyUp && d(kp[8], kp[4]) < d(kp[5], kp[13])) {
+    return "OK";
+  }
+
   // 2. 布：大部分手指伸開 (放寬到 >= 3 以應對偵測不穩)
   if (count >= 3) return "布";
 
@@ -523,19 +531,19 @@ function drawHand() {
     [17, 18], [18, 19], [19, 20]
   ];
 
-  // 遍歷所有偵測到的手
   if (hands.length > 0) {
     for (let hand of hands) {
       if (hand.confidence > 0.1) {
         let keypoints = hand.keypoints;
 
-        // 繪製骨架連接線（明亮的藍色）
         stroke(0, 200, 255);
-        strokeWeight(4); // 加粗線條
+        strokeWeight(4);
         for (let connection of connections) {
           let p1 = keypoints[connection[0]];
           let p2 = keypoints[connection[1]];
-          // 座標映射邏輯：考慮到裁剪(sx, sy)與鏡像(vX + vW - ...)
+          
+          // 鏡像邏輯：起始點 X + 寬度 - (相對裁剪區的偏移 * 縮放比例)
+          // 這樣能將原始攝影機座標正確映射到畫面上置中 60% 且鏡像後的區域
           line(
             vX + vW - (p1.x - sx) * scaleX,
             vY + (p1.y - sy) * scaleY,
@@ -544,9 +552,8 @@ function drawHand() {
           );
         }
 
-        // 繪製關鍵點（亮黃色圓點）
         noStroke();
-        fill(255, 255, 0); // 亮黃色
+        fill(255, 255, 0);
         for (let kp of keypoints) {
           circle(
             vX + vW - (kp.x - sx) * scaleX,
@@ -555,7 +562,6 @@ function drawHand() {
           );
         }
 
-        // 手腕特殊標記（更大的圓點，紅色）
         fill(255, 0, 0);
         circle(
           vX + vW - (keypoints[0].x - sx) * scaleX,
@@ -622,10 +628,27 @@ function isMouseOverButton(x, y) {
 }
 
 function checkHandTrigger() {
+  // 1. 偵測「叉叉」(X) 手勢：兩隻手的食指尖端接觸
+  if (hands.length >= 2 && hands[0].confidence > 0.4 && hands[1].confidence > 0.4) {
+    let tip1 = hands[0].keypoints[8];
+    let tip2 = hands[1].keypoints[8];
+    // 計算兩手食指尖端的距離
+    if (dist(tip1.x, tip1.y, tip2.x, tip2.y) < 50) {
+      // 新增：在兩指交會處繪製暫停指示圖示
+      drawPauseIndicator(tip1, tip2);
+
+      let currentTime = millis();
+      if (currentTime - lastPauseTime > GESTURE_COOLDOWN) {
+        togglePause();
+        lastPauseTime = currentTime;
+        return; // 優先處理暫停，跳過後續邏輯
+      }
+    }
+  }
+
   // 提高信心值要求，確保手勢辨識準確，避免背景干擾自動開始
   let activeHand = hands.find(h => h.confidence > 0.4);
   
-  // 如果畫面上沒偵測到手，重置觸發許可 (這讓玩家可以透過「移開手再放回」來再次自動開始遊戲)
   if (!activeHand) {
     canTriggerNext = true;
     return;
@@ -643,13 +666,46 @@ function checkHandTrigger() {
     canTriggerNext = false; // 鎖定觸發，防止立刻重新開始下一局
   }
   
-  // 情境二：在「等待開始」或「結算結果」畫面，偵測到任何手勢就自動開始
+  // 情境二：在「等待開始」或「結算結果」畫面，偵測到「OK」手勢才自動開始
   if (canTriggerNext && (gameState === "instructions" || gameState === "result") && 
-           (detectedGesture !== "不明" && detectedGesture !== "等待中")) {
+           (detectedGesture === "OK")) {
     gameState = "countdown";
     countdownStart = millis();
     canTriggerNext = false; // 標記已觸發，避免在倒數時重複重置時間
   }
+}
+
+// 新增：在偵測到叉叉手勢時繪製 AR 暫停圖示
+function drawPauseIndicator(p1, p2) {
+  let scaleX = vW / sw;
+  let scaleY = vH / sh;
+
+  // 計算兩指尖的中點座標 (原始影像座標)
+  let midX = (p1.x + p2.x) / 2;
+  let midY = (p1.y + p2.y) / 2;
+
+  // 轉換為畫布上的鏡像座標
+  let canvasX = vX + vW - (midX - sx) * scaleX;
+  let canvasY = vY + (midY - sy) * scaleY;
+
+  push();
+  translate(canvasX, canvasY);
+  
+  // 繪製外層發光圓圈
+  let pulse = sin(frameCount * 0.2) * 10;
+  noFill();
+  stroke(255, 50, 50, 200); // 紅色發光
+  strokeWeight(3);
+  circle(0, 0, 60 + pulse);
+  
+  // 繪製內層暫停符號 (||)
+  fill(255);
+  noStroke();
+  rectMode(CENTER);
+  rect(-10, 0, 8, 25, 2); // 左槓
+  rect(10, 0, 8, 25, 2);  // 右槓
+  
+  pop();
 }
 
 function mousePressed() {
