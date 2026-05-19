@@ -260,12 +260,18 @@ function executeGameRound() {
 function detectMove(hand) {
   let kp = hand.keypoints;
 
-  // 偵測手指是否伸直 (y 座標越小代表位置越高)
-  let thumbUp = kp[4].y < kp[3].y && kp[4].y < kp[5].y;
-  let indexUp = kp[8].y < kp[5].y;
-  let middleUp = kp[12].y < kp[9].y;
-  let ringUp = kp[16].y < kp[13].y;
-  let pinkyUp = kp[20].y < kp[17].y;
+  // 改用距離判斷：如果指尖到手腕的距離 > 手指根部到手腕的距離，則視為伸直
+  // kp[0] 是手腕 (Wrist)
+  const d = (p1, p2) => dist(p1.x, p1.y, p2.x, p2.y);
+  const wrist = kp[0];
+
+  let indexUp = d(kp[8], wrist) > d(kp[6], wrist);
+  let middleUp = d(kp[12], wrist) > d(kp[10], wrist);
+  let ringUp = d(kp[16], wrist) > d(kp[14], wrist);
+  let pinkyUp = d(kp[20], wrist) > d(kp[18], wrist);
+  
+  // 大拇指比較特殊，判斷大拇指尖與小指根部的距離
+  let thumbUp = d(kp[4], kp[17]) > d(kp[3], kp[17]);
 
   let count = 0;
   if (indexUp) count++;
@@ -278,13 +284,16 @@ function detectMove(hand) {
     return "讚";
   }
 
-  if (count >= 4) return "布";
-
-  if (indexUp && middleUp && !ringUp && !pinkyUp) {
+  // 2. 剪刀：食指與中指伸直，其餘收起
+  if (indexUp && middleUp && count === 2) {
     return "剪刀";
   }
 
-  if (count <= 1) return "石頭";
+  // 3. 布：四指全開
+  if (count === 4) return "布";
+
+  // 4. 石頭：四指全部收起
+  if (count === 0) return "石頭";
 
   return "不明";
 }
