@@ -20,7 +20,8 @@ let playTimeStart;
 const playDuration = 3; // 玩家必須在 3 秒內完成動作
 let moveMade = false; // 追蹤玩家是否已做出動作
 // 用於計算影像縮放與偏移的變數，確保手部點位繪製能對齊畫面
-let vW, vH, vX, vY;
+let vW, vH, vX, vY; 
+let sx, sy, sw, sh; // 新增：用於影像裁剪的來源座標與尺寸
 
 // 新增：追蹤鏡頭是否就緒
 let videoReady = false;
@@ -205,30 +206,44 @@ function loadingPage() {
   text("請確保已允許瀏覽器使用攝影機權限", width / 2, height / 2 + 50);
 }
 
-// 讓鏡頭畫面在手機/電腦都等比例填滿，不變形
+// 讓鏡頭畫面顯示在中間 60%，且自動裁剪以填滿區域（無黑邊）
 function drawVideoFit() {
-  let videoRatio = video.width / video.height;
-  let canvasRatio = width / height;
-
-  let drawW, drawH;
-  if (canvasRatio > videoRatio) {
-    drawW = width;
-    drawH = width / videoRatio;
-  } else {
-    drawH = height;
-    drawW = height * videoRatio;
-  }
-
-  vW = drawW;
-  vH = drawH;
+  // 設定目標顯示區域為畫布的 60% 並置中
+  vW = width * 0.6;
+  vH = height * 0.6;
   vX = (width - vW) / 2;
   vY = (height - vH) / 2;
+
+  let videoRatio = video.width / video.height;
+  let targetRatio = vW / vH;
+
+  // 計算裁剪區域 (Source Coordinates) 以達成 "cover" 效果，避免黑邊
+  if (videoRatio > targetRatio) {
+    // 影片太寬，裁剪左右
+    sh = video.height;
+    sw = video.height * targetRatio;
+    sx = (video.width - sw) / 2;
+    sy = 0;
+  } else {
+    // 影片太高，裁剪上下
+    sw = video.width;
+    sh = video.width / targetRatio;
+    sx = 0;
+    sy = (video.height - sh) / 2;
+  }
 
   push();
   translate(vX + vW, vY); // 將座標原點移至影片繪製區域的右上角
   scale(-1, 1);           // 水平翻轉
-  image(video, 0, 0, vW, vH);
+  
+  // 繪製裁剪後的影像：image(img, dx, dy, dWidth, dHeight, sx, sy, sWidth, sHeight)
+  image(video, 0, 0, vW, vH, sx, sy, sw, sh);
   pop();
+  
+  // 繪製一個細框框住影像區域
+  stroke(255, 100);
+  noFill();
+  rect(width / 2, height / 2, vW, vH);
 }
 
 function drawTopBar() {
@@ -237,7 +252,11 @@ function drawTopBar() {
 
   fill(255);
   textSize(getSize(22, 18, 28));
-  text("你：" + playerScore + "   電腦：" + computerScore, width / 2 - 40, 30);
+  // 分數移至兩側
+  textAlign(LEFT, CENTER);
+  text("你：" + playerScore, 20, 30);
+  textAlign(RIGHT, CENTER);
+  text("電腦：" + computerScore, width - 80, 30);
 
   // 繪製右上角暫停按鈕
   drawPauseButton(width - 40, 30);
@@ -362,14 +381,17 @@ function resultPage() {
   // 加大背景遮罩區域，避免文字與背景混在一起
   rect(width / 2, height * 0.5, width, height);
 
+  // 顯示出拳資訊於影像兩側
   fill(255);
+  textAlign(CENTER, CENTER);
   textSize(getSize(36, 26, 42));
-  text("你：" + playerMove, width / 2, height * 0.42);
-  text("電腦：" + computerMove, width / 2, height * 0.52);
+  text("你出了\n" + playerMove, width * 0.1, height / 2);
+  text("電腦出\n" + computerMove, width * 0.9, height / 2);
 
+  // 結果顯示在影像下方
   textSize(getSize(50, 36, 60));
   fill(255, 255, 0); // 結果文字用黃色更加顯眼
-  text(resultText, width / 2, height * 0.65);
+  text(resultText, width / 2, height * 0.85);
 
   showAnimation();
   drawButton(width / 2, height * 0.85, "再玩一次"); 
@@ -384,24 +406,24 @@ function countdownPage() {
   rect(width / 2, height / 2, width, height);
 
   fill(255);
-  textSize(getSize(100, 70, 130));
 
   if (countdown > 0) {
-    text(countdown, width / 2, height / 2);
+    textSize(getSize(100, 70, 130));
+    text(countdown, width * 0.1, height / 2); // 倒數數字在左側
     playTimeStart = undefined; // 重置計時器
     moveMade = false; // 重置動作狀態
     playerMove = "等待中"; // 重置玩家動作
   } else {
-    text("出拳！", width / 2, height / 2);
+    textSize(getSize(60, 40, 80));
+    text("出拳！", width * 0.1, height / 2); // 「出拳！」在左側
     
     if (playTimeStart === undefined) {
       playTimeStart = millis(); // 當「出拳！」出現時啟動計時器
     }
 
-    // 顯示 3 秒倒數計時（視覺提示）
+    // 顯示 3 秒倒數計時（視覺提示）在右側
     let timerElapsed = (millis() - playTimeStart) / 1000;
     let remaining = max(0, (playDuration - timerElapsed)).toFixed(1);
-    textSize(getSize(32, 24, 40));
     fill(255, 255, 0);
     text("剩餘時間: " + remaining + "s", width / 2, height / 2 + 80);
 
@@ -488,8 +510,8 @@ function judge(player, computer) {
 
 function drawHand() {
   // 直接使用 drawVideoFit 已經算好的全域縮放變數
-  let scaleX = vW / video.width;
-  let scaleY = vH / video.height;
+  let scaleX = vW / sw;
+  let scaleY = vH / sh;
 
   // 定義手部骨架連接關係
   const connections = [
@@ -513,21 +535,22 @@ function drawHand() {
         for (let connection of connections) {
           let p1 = keypoints[connection[0]];
           let p2 = keypoints[connection[1]];
+          // 座標映射邏輯：考慮到裁剪(sx, sy)與鏡像(vX + vW - ...)
           line(
-            vX + p1.x * scaleX,
-            vY + p1.y * scaleY,
-            vX + p2.x * scaleX,
-            vY + p2.y * scaleY
+            vX + vW - (p1.x - sx) * scaleX,
+            vY + (p1.y - sy) * scaleY,
+            vX + vW - (p2.x - sx) * scaleX,
+            vY + (p2.y - sy) * scaleY
           );
         }
 
         // 繪製關鍵點（亮黃色圓點）
         noStroke();
         fill(255, 255, 0); // 亮黃色
-        for (let keypoint of keypoints) {
+        for (let kp of keypoints) {
           circle(
-            vX + keypoint.x * scaleX,
-            vY + keypoint.y * scaleY,
+            vX + vW - (kp.x - sx) * scaleX,
+            vY + (kp.y - sy) * scaleY,
             10
           );
         }
@@ -535,8 +558,8 @@ function drawHand() {
         // 手腕特殊標記（更大的圓點，紅色）
         fill(255, 0, 0);
         circle(
-          vX + keypoints[0].x * scaleX,
-          vY + keypoints[0].y * scaleY,
+          vX + vW - (keypoints[0].x - sx) * scaleX,
+          vY + (keypoints[0].y - sy) * scaleY,
           14
         );
       }
