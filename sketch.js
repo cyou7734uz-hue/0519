@@ -152,7 +152,11 @@ function drawVideoFit() {
   vX = (width - vW) / 2;
   vY = (height - vH) / 2;
 
-  image(video, vX, vY, vW, vH);
+  push();
+  translate(vX + vW, vY); // 將座標原點移至影片繪製區域的右上角
+  scale(-1, 1);           // 水平翻轉
+  image(video, 0, 0, vW, vH);
+  pop();
 }
 
 function drawTopBar() {
@@ -298,25 +302,42 @@ function judge(player, computer) {
 }
 
 function drawHand() {
+  // 計算視頻顯示的縮放和偏移
+  let videoRatio = video.width / video.height;
+  let canvasRatio = width / height;
+
+  let drawW, drawH;
+  if (canvasRatio > videoRatio) {
+    drawW = width;
+    drawH = width / videoRatio;
+  } else {
+    drawH = height;
+    drawW = height * videoRatio;
+  }
+
+  let offsetX = (width - drawW) / 2;
+  let offsetY = (height - drawH) / 2;
+
   // 遍歷所有偵測到的手
-  for (let hand of hands) {
-    // 只繪製信心值大於 0.1 的手，增加穩定性
-    if (hand.confidence > 0.1) {
-      // 根據左右手顯示不同顏色（參考範例代碼）
-      if (hand.handedness === "Left") {
-        fill(255, 0, 255);
-      } else {
-        fill(255, 255, 0);
-      }
-    noStroke();
+  if (hands.length > 0) {
+    for (let hand of hands) {
+      if (hand.confidence > 0.1) {
+        // 根據左右手顯示不同顏色
+        if (hand.handedness == "Left") {
+          fill(255, 0, 255);
+        } else {
+          fill(255, 255, 0);
+        }
+        noStroke();
 
-      // 計算座標縮放比例
-      let scaleX = vW / video.width;
-      let scaleY = vH / video.height;
+        // 計算縮放比例
+        let scaleX = drawW / video.width;
+        let scaleY = drawH / video.height;
 
-    for (let point of hand.keypoints) {
-        // 將點位從影像空間座標轉換到畫布顯示座標
-        circle(vX + point.x * scaleX, vY + point.y * scaleY, getSize(10, 8, 14));
+        // 繪製所有手指關鍵點
+        for (let keypoint of hand.keypoints) {
+          circle(offsetX + keypoint.x * scaleX, offsetY + keypoint.y * scaleY, 10);
+        }
       }
     }
   }
