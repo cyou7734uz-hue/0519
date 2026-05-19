@@ -16,6 +16,11 @@ let countdownStart;
 // 用於計算影像縮放與偏移的變數，確保手部點位繪製能對齊畫面
 let vW, vH, vX, vY;
 
+// 新增：追蹤鏡頭是否就緒
+let videoReady = false;
+// 新增：追蹤鏡頭是否啟動失敗
+let videoError = false;
+
 function preload() {
   handPose = ml5.handPose({ flipped: true });
 }
@@ -23,11 +28,21 @@ function preload() {
 function setup() {
   createCanvas(windowWidth, windowHeight);
 
-  video = createCapture(VIDEO, { flipped: true });
+  // 加入回調函式，確保鏡頭就緒後才開始偵測
+  video = createCapture(VIDEO, { flipped: true }, () => {
+    console.log("鏡頭已啟動");
+    videoReady = true;
+    handPose.detectStart(video, gotHands);
+  });
   video.size(640, 480);
   video.hide();
 
-  handPose.detectStart(video, gotHands);
+  // 設定逾時檢查：如果 8 秒後鏡頭還沒準備好，則判定為錯誤
+  setTimeout(() => {
+    if (!videoReady) {
+      videoError = true;
+    }
+  }, 8000);
 
   textAlign(CENTER, CENTER);
   rectMode(CENTER);
@@ -40,10 +55,14 @@ function gotHands(results) {
 function draw() {
   background(20);
 
-  if (video.width > 0) { // 確保攝影機已啟動
-  drawVideoFit();
-    drawHand();
+  // 如果鏡頭還沒準備好，顯示讀取畫面並中斷後續繪製
+  if (!videoReady || video.width === 0) {
+    loadingPage();
+    return;
   }
+
+  drawVideoFit();
+  drawHand();
 
   drawTopBar();
 
@@ -54,6 +73,39 @@ function draw() {
   } else if (gameState === "result") {
     resultPage();
   }
+}
+
+// 新增：讀取頁面函式
+function loadingPage() {
+  if (videoError) {
+    // 顯示錯誤訊息
+    fill(255, 50, 50); // 紅色文字提醒
+    textSize(getSize(32, 24, 40));
+    text("鏡頭啟動失敗", width / 2, height / 2);
+    
+    fill(200);
+    textSize(getSize(16, 12, 20));
+    text("請檢查：\n1. 攝影機是否已連接\n2. 瀏覽器權限是否已開啟\n3. 網址是否使用 localhost 或 HTTPS", width / 2, height / 2 + 80);
+    
+    drawButton(width / 2, height * 0.82, "重新整理");
+    return;
+  }
+
+  // 繪製旋轉動畫 emoji
+  push();
+  translate(width / 2, height / 2 - 100); // 將座標移至文字上方
+  rotate(frameCount * 0.1); // 隨格數旋轉，0.1 控制旋轉速度
+  textAlign(CENTER, CENTER);
+  textSize(getSize(60, 40, 80)); // 使用自訂的 getSize 調整大小
+  text("✨", 0, 0); // 你也可以換成 🌸, 🎮 或 🔄
+  pop();
+
+  fill(255);
+  noStroke();
+  textSize(getSize(32, 24, 40));
+  text("等待鏡頭啟動...", width / 2, height / 2);
+  textSize(getSize(16, 12, 20));
+  text("請確保已允許瀏覽器使用攝影機權限", width / 2, height / 2 + 50);
 }
 
 // 讓鏡頭畫面在手機/電腦都等比例填滿，不變形
@@ -255,6 +307,11 @@ function getSize(base, minSize, maxSize) {
 }
 
 function mousePressed() {
+  // 如果鏡頭出錯，點擊按鈕後重新整理網頁
+  if (videoError) {
+    window.location.reload();
+  }
+
   if (gameState === "start" || gameState === "result") {
     gameState = "countdown";
     countdownStart = millis();
